@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, Header, HTTPException, Security
+from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.security.api_key import APIKey, APIKeyHeader
 from routers import cameras, containers
 import config
@@ -10,13 +10,18 @@ api_key_header = APIKeyHeader(name='spawner-api-key', auto_error=False)
 
 
 async def get_api_key(api_key_h: APIKey = Security(api_key_header)):
-    # if api_key_h == config.API_KEY:
-    #     return api_key_h
-    # else:
-    #     raise HTTPException(
-    #         status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials"
-    #     )
-    return api_key_h
+    if api_key_h == config.API_KEY:
+        return api_key_h
+    else:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials"
+        )
+
+
+@app.get("/")
+def home():
+    return "Refer to '/docs' for API documentation"
+
 
 app.include_router(
     cameras.router,
