@@ -3,14 +3,23 @@ from pydantic import BaseModel, Field
 from typing import List
 from redisvc.redis import Redis
 import docker
+from functools import lru_cache
 import config
 
 docker_client = docker.from_env()
 
 router = APIRouter()
 
-# redis_db = Redis(config.REDIS_URI_DEV, password=config.REDIS_PASSWORD, decode_responses=True)
-redis_db = Redis(config.REDIS_URI_DEV, decode_responses=True)
+
+@lru_cache()
+def get_settings():
+    return config.Settings()
+
+
+if get_settings().DEV:
+    redis_db = Redis(get_settings().REDIS_URI_DEV, decode_responses=True)
+else:
+    redis_db = Redis(get_settings().REDIS_URI, password=get_settings().REDIS_PASSWORD, decode_responses=True)
 
 
 class StartResponse(BaseModel):
