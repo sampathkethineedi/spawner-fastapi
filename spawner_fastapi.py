@@ -4,7 +4,8 @@ from routers import cameras, containers
 import config
 from starlette.status import HTTP_403_FORBIDDEN
 
-app = FastAPI()
+app = FastAPI(title='Argus Spawner API', description='Register Cameras. Start/Stop containers',
+              docs_url='/spawner-api/docs', redoc_url=None)
 
 api_key_header = APIKeyHeader(name='spawner-api-key', auto_error=False)
 
@@ -18,9 +19,9 @@ async def get_api_key(api_key_h: APIKey = Security(api_key_header)):
         )
 
 
-@app.get("/")
+@app.get("/spawner-api")
 def home():
-    return "Refer to '/docs' for API documentation"
+    return "Refer to '/spawner-api/docs' for API documentation"
 
 
 app.include_router(
