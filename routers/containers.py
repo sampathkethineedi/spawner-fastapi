@@ -74,7 +74,7 @@ def container_start(cam_id: str = Path(..., description='camera ID', example='te
 
     try:
         container = docker_client.containers.run(
-            config.IMAGE_NAME,
+            get_settings().IMAGE_NAME,
             ["--cam_id", cam_id, "--cam_url", 'mask_entrance.mp4', "--entry_points", entry_points],
             volumes={'/home/ubuntu/argus/checkpoints': {'bind': '/app/checkpoints', 'mode': 'rw'}},
             detach=True)

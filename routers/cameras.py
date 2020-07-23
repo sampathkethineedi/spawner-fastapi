@@ -21,9 +21,11 @@ else:
 
 
 class Camera(BaseModel):
-    cam_id: str = Field("test_cam_01", description="Unique Camera ID", example="test_cam_01")
-    cam_url: str = Field("mask_entrance.mp4", description="Camera RTSP stream URL", example="mask_entrance.mp4")
-    entry_points: str = Field("300#1000#1050#450", description="Camera entry points. Ex: 300#1000#1050#450", example="300#1000#1050#450")
+    cam_id: str = Field(None, description="Unique Camera ID", example="test_cam_01")
+    cam_url: str = Field(None, description="Camera RTSP stream URL", example="mask_entrance.mp4")
+    entry_points: Optional[str] = Field(None, description="Camera entry points. Ex: 300#1000#1050#450", example="300#1000#1050#450")
+    floor_points: Optional[str] = Field(None, description="Floor transform points from lower right in clockwise. Ex: 85#42#435#3#105#349#693#246",
+                                        example="85#42#435#3#105#349#693#246")
     info: Optional[str] = 'Generic information'
 
 
@@ -38,7 +40,7 @@ def register_camera(camera: Camera = Camera()):
 
     key = 'camera#' + camera.cam_id
 
-    data = {"cam_id": camera.cam_id, "cam_url": camera.cam_url, "entry_points": camera.entry_points, "info": camera.info}
+    data = {"cam_id": camera.cam_id, "cam_url": camera.cam_url, "entry_points": camera.entry_points, "info": camera.info, "floor_points": camera.floor_points}
 
     msg = redis_db.r.hmset(key, data)
 
@@ -66,7 +68,8 @@ def camera_info(cam_id: str = Path(..., description="Camera ID")):
 
     if data == {}:
         raise HTTPException(status_code=332, detail="No camera registered with id: "+cam_id)
-    return data
+    else:
+        return data
 
 
 def list_cameras(k):
