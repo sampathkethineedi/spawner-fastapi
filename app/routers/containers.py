@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Body
 from pydantic import BaseModel, Field
 from typing import List
 from redisvc.redis import Redis
@@ -16,7 +16,7 @@ def get_settings():
     return config.Settings()
 
 
-if get_settings().DEV:
+if get_settings().DEV == "True":
     redis_db = Redis(get_settings().REDIS_URI_DEV, decode_responses=True)
 else:
     redis_db = Redis(get_settings().REDIS_URI, password=get_settings().REDIS_PASSWORD, decode_responses=True)
@@ -51,8 +51,49 @@ def get_running_containers():
     return cam_running, container_ids
 
 
-@router.get("/start/{cam_id}", response_model=StartResponse)
-def container_start(cam_id: str = Path(..., description='camera ID', example='test_cam_01')):
+class DefaultParam:
+    def __init__(self, data):
+        self.cam_id = data["cam_id"]
+        self.cam_url = data["cam_url"]
+        self.process_stack = data["process_stack"]
+        self.info = data["info"]
+        self.volumes = {'/home/ubuntu/argus/checkpoints': {'bind': '/app/checkpoints', 'mode': 'rw'}}
+
+    def get_param(self):
+        return ["--cam_id", self.cam_id, "--cam_url", self.cam_url, "--process_stack", self.process_stack]
+
+    def final_param(self):
+        return self.get_param()
+
+    def run(self):
+        try:
+            container = docker_client.containers.run(
+                get_settings().IMAGE_NAME, self.final_param(), volumes=self.volumes, detach=True)
+            return container
+        except Exception as err:
+            raise HTTPException(status_code=444, detail="Error starting the container for " + self.cam_id)
+
+
+class FinalParam(DefaultParam):
+    def __init__(self, data):
+        super().__init__(data)
+
+        self.entry_points = data["entry_points"]
+        self.floor_points = data["floor_points"]
+        self.volumes['/home/ubuntu/argus/images'] = {'bind': '/app/images', 'mode': 'rw'}
+
+    def final_param(self):
+        param = self.get_param()
+        if 'person_counter' in self.process_stack.split('#'):
+            param.extend(["--entry_points", self.entry_points])
+        if 'social_distance' in self.process_stack.split('#'):
+            param.extend(["--floor_points", self.floor_points])
+        return param
+
+
+@router.post("/start/{cam_id}", response_model=StartResponse)
+def container_start(cam_id: str = Path(..., description='camera ID', example='test_cam_01'),
+                    process_stack: str = Body(None, description='change process stack', example='person_counter')):
     try:
         key = redis_db.get_keys('camera#' + str(cam_id))
     except Exception as err:
@@ -62,25 +103,19 @@ def container_start(cam_id: str = Path(..., description='camera ID', example='te
 
     data = redis_db.r.hgetall(key)
 
-    cam_url, entry_points = data['cam_url'], data['entry_points']
+    if process_stack:
+        data['process_stack'] = process_stack
+
+    camera_param = FinalParam(data)
 
     cam_running, _ = get_running_containers()
 
-    if cam_id not in cam_running:
-        pass
-    else:
+    if cam_id in cam_running:
+
         container_id = redis_db.r.get('container#' + cam_id)
         return 'Container already running for {} with id {}'.format(cam_id, container_id)
 
-    try:
-        container = docker_client.containers.run(
-            get_settings().IMAGE_NAME,
-            ["--cam_id", cam_id, "--cam_url", 'mask_entrance.mp4', "--entry_points", entry_points],
-            volumes={'/home/ubuntu/argus/checkpoints': {'bind': '/app/checkpoints', 'mode': 'rw'}},
-            detach=True)
-    except Exception as err:
-        raise HTTPException(status_code=444, detail="Error starting the container for "+cam_id)
-
+    container = camera_param.run()
     print('Started container for {} with id {}'.format(cam_id, container.id))
 
     msg = redis_db.r.set('container#' + cam_id, container.id)

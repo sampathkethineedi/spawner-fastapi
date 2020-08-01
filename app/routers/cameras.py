@@ -14,8 +14,8 @@ def get_settings():
     return config.Settings()
 
 
-if get_settings().DEV:
-    redis_db = Redis(get_settings().REDIS_URI_DEV, decode_responses=True)
+if get_settings().DEV == "True":
+    redis_db = Redis(get_settings().REDIS_URI, password=get_settings().REDIS_PASSWORD, decode_responses=True, db=4)
 else:
     redis_db = Redis(get_settings().REDIS_URI, password=get_settings().REDIS_PASSWORD, decode_responses=True)
 
@@ -26,6 +26,7 @@ class Camera(BaseModel):
     entry_points: Optional[str] = Field(None, description="Camera entry points. Ex: 300#1000#1050#450", example="300#1000#1050#450")
     floor_points: Optional[str] = Field(None, description="Floor transform points from lower right in clockwise. Ex: 85#42#435#3#105#349#693#246",
                                         example="85#42#435#3#105#349#693#246")
+    process_stack: str = Field(None, description="process stack", example="person_counter#social_distance")
     info: Optional[str] = 'Generic information'
 
 
@@ -40,14 +41,15 @@ def register_camera(camera: Camera = Camera()):
 
     key = 'camera#' + camera.cam_id
 
-    data = {"cam_id": camera.cam_id, "cam_url": camera.cam_url, "entry_points": camera.entry_points, "info": camera.info, "floor_points": camera.floor_points}
+    data = {"cam_id": camera.cam_id, "cam_url": camera.cam_url, "entry_points": camera.entry_points,
+            "process_stack": camera.process_stack, "info": camera.info, "floor_points": camera.floor_points}
 
     msg = redis_db.r.hmset(key, data)
 
     return {"redis_message": msg, "message": "Registered camera with key: "+key, "data": data}
 
 
-@router.get("/all/{k}", response_model=List)
+@router.get("/info/all/{k}", response_model=List)
 def camera_info(k: str = Path('ALL', description="Camera information to return - 'ALL' or one out of ['cam_id', 'cam_url', 'entry_points', 'info']")
                 ):
     if k not in ['ALL', 'cam_id', 'cam_url', 'entry_points', 'info']:
@@ -57,7 +59,7 @@ def camera_info(k: str = Path('ALL', description="Camera information to return -
     return out
 
 
-@router.get("/{cam_id}", response_model=Camera)
+@router.get("/info/{cam_id}", response_model=Camera)
 def camera_info(cam_id: str = Path(..., description="Camera ID")):
 
     key = 'camera#'+cam_id
@@ -82,3 +84,19 @@ def list_cameras(k):
             all_cameras.append(redis_db.r.hmget(key, k)[0])
 
     return all_cameras
+
+
+@router.get("/delete/{cam_id}")
+def delete_all_cameras(cam_id: str = Path(..., description="Camera ID. If 'ALL' all cameras wil be deleted")):
+    if cam_id == "ALL":
+        keys = list(redis_db.get_keys('camera#'))
+        for key in keys:
+            redis_db.r.delete(key)
+
+        return {"message": "Deleted {:d} cameras from DB".format(len(keys))}
+    else:
+        try:
+            redis_db.r.delete("camera#"+cam_id)
+            return {"message": "Deleted cameras with id {}".format(cam_id)}
+        except Exception as err:
+            raise HTTPException(status_code=332, detail="No camera registered with id: "+cam_id)
